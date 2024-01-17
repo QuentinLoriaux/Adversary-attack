@@ -58,7 +58,9 @@ W = torchvision.models.segmentation.DeepLabV3_ResNet50_Weights.COCO_WITH_VOC_LAB
 #On crée une instance du modèle DeepLabV3 qu'on va plus tard utiliser 
 net = torchvision.models.segmentation.deeplabv3_resnet50(weights=W)
 net = net.cuda()
-#['__background__', 'aeroplane', 'bicycle', 'bird', 'boat', 'bottle', 'bus', 'car', 'cat', 'chair', 'cow', 'diningtable', 'dog', 'horse', 'motorbike', 'person', 'pottedplant', 'sheep', 'sofa', 'train', 'tvmonitor']
+# ['__background__', 'aeroplane', 'bicycle', 'bird', 'boat', 'bottle', 'bus', 'car',
+# 'cat', 'chair', 'cow', 'diningtable', 'dog', 'horse', 'motorbike', 'person',
+# 'pottedplant', 'sheep', 'sofa', 'train', 'tvmonitor']
 
 #no_grad pour pas calculer des calculs de gradient dans le code (économie de mémoire)
 with torch.no_grad():
@@ -67,13 +69,13 @@ with torch.no_grad():
   #Transformations obscures sur la liste avec les poids
   x = (W.transforms())(x).cuda()
   z = net(x)["out"] # prédiction des cartes de score de confiance
-  z = z[:,[0,8,12,15],:,:] # we keep only person, cat and dog class, 0=background
-  l,z = z.max(1) # on prend le meilleur score
+  z = z[:,[0,8,12,15,    10],:,:] # we keep only person, cat and dog class, 0=background
+  score,z = z.max(1) # on prend le meilleur score
 
 # print("score")
-# print(l)
-# print("index")
-# print(z)
+# print(score)
+print("index")
+print(z)
 
 
 
@@ -81,10 +83,23 @@ with torch.no_grad():
 
 # visualisation des prédictions : il faut transformer les indices de classes en couleur
 
-couleur = torch.zeros(9,3,520,520).cuda()
-couleur[:,0,:,:] = (z==1).float() # red for cat
-couleur[:,1,:,:] = (z==2).float() # green for dog
-couleur[:,2,:,:] = (z==3).float() # blue for person
+class_to_color = {0: [120, 120, 0], 1: [255, 0, 0], 2: [0, 255, 0], 3: [0, 0, 255], 4: [200,0,200]}
+# 4 : vache (meuh) | effectivement y en a pas
+
+rgb_tensor = torch.zeros(9,3,520,520).cuda()
+for class_label, color in class_to_color.items():
+    mask = (z == class_label).unsqueeze(1).float()
+    rgb_tensor += mask * torch.tensor(color).view(1, 3, 1, 1).float().cuda()
+
+visu = torch.cat([im1,im2,im3,im4,im5,im6,im7,im8,im9],dim=-1)
+visubis = torch.cat([rgb_tensor[i] for i in range(9)],dim=-1).cpu()
+visu = torch.cat([visu,visubis],dim=1)
+visu = visu.cpu().numpy().transpose(1,2,0)
+
+# couleur = torch.zeros(9,3,520,520).cuda()
+# couleur[:,0,:,:] = (z==1).float() # red for cat
+# couleur[:,1,:,:] = (z==2).float() # green for dog
+# couleur[:,2,:,:] = (z==3).float() # blue for person
 
 visu = torch.cat([im1,im2,im3,im4,im5,im6,im7,im8,im9],dim=-1)
 visubis = torch.cat([rgb_tensor[i] for i in range(9)],dim=-1).cpu()
