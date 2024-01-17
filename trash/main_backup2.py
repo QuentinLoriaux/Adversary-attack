@@ -38,9 +38,10 @@ with torch.no_grad():
   x = (W.transforms())(x).cuda()
   z = net(x)["out"] # prédiction des cartes de score de confiance
   classes = [0,8,12,15,    16,3,2,4,5]
-  l = z[:,classes,:,:] # we keep only background, person, cat and dog class + wrong classes
-
-   #exemple : z[:,0,:,:] donne le score du background sur chaque pixel 
+  z = z[:,classes,:,:] # we keep only background, person, cat and dog class + wrong classes
+   #exemple : z[:,0,:,:] donne le score du background sur chaque pixel
+  _,l = z.max(1) 
+  del z
 
 
 # ============ Bagarre ============
@@ -53,8 +54,9 @@ with torch.no_grad():
 
 #définir la liste des mauvaises prédictions (par permutation parmi les mauvaises par ex, ou choix arbitraire)
 
+n1,n2,n3 = np.shape(l)
+l_prime = np.empty((n1, n2, n3), dtype=int)
 
-#untargeted, on pourrait définir un l_prime particulier pour le targeted : un texte sur fond ..., un rond...
 def permutation_sans_point_fixe(lst):
     while True:
         perm = np.random.permutation(lst)
@@ -62,7 +64,11 @@ def permutation_sans_point_fixe(lst):
             return perm
 
 perm = permutation_sans_point_fixe(range(len(classes)))
-l_prime = z[:, perm, :, :]
+
+for i in range(n1):
+    for j in range(n2):
+        for k in range(n3):
+            l_prime[i, j, k] = perm[l[i,j,k]]
 
 gamma = 0.5
 maxIter = 200
@@ -74,47 +80,78 @@ maxIter = 200
 
 
 xm = x
-xm.requires_grad_().float()
-
+lm = l
 r = torch.zeros_like(x)
 m = 0
 
 print("debut boucle")
 
 
-while m < maxIter: 
+while m<maxIter: 
 
   with torch.no_grad():
-    zm = net(xm)
-    lm = zm["out"][:,classes,:,:]
-
+    zm = net(xm)["out"][:,classes,:,:]
+    sm,lm = zm.max(1)
     condition = torch.eq(lm, l)
     if condition.sum() == 0: # tous les pixels sont erronés
         break
   
   #Finding pixels to purturb
   adv_log=torch.mul(zm,l_prime)
-
   #Getting the values of the original output
   clean_log=torch.mul(zm,l)
 
   adv_dir = adv_log - clean_log
-  rm = torch.mul(adv_dir,condition) # ne modifier que les pixels bons
+  rm = torch.mul(adv_dir,condition)
   rm.requires_grad_()
 
   rm_sum = rm.sum()
-  rm_sum.requires_grad_()
+  rm_sum = requires_grad_()
 
-  rm_grad = torch.autograd.grad(rm_sum,xm, retain_graph=True)#calcul du gradient
+  rm_grad = torch.autograd.grad(rm_sum,xm, retain_graph=True)
 
   rm_grad_calc = rm_grad[0]
-  print(rm_grad_calc)
 
 
-  rm = (gamma/rm_grad_calc.norm())*rm_grad_calc
+  # PLOT TWIST : je sais pas calculer le gradient, voilà T_T
+
+  # sm,lm = zm.max(1)
+  # sm.requires_grad_()
+  # loss = 
+  # loss.backward(torch.ones_like(loss))
+  # grads = xm.grad  
+
+
+  # masque = (lmm == l).unsqueeze(1).expand(-1, 3, -1, -1)
+  # print(masque.shape)
+  # print(xm.shape)
+  # xm_s = torch.masked_select(xm,masque).cpu() #On masque les pixels déjà mal classés
+  # # pas assez de mem sur le gpu, je tente le cpu au pif
+
+  # #calcul sur l'image réduite
+  # zm_s = net(xm_s)["out"]#ça marche pas================================================
+  # zm_s = zm_s[:,classes,:,:].requires_grad_()
+
+  # zm_s.backward()
+  # grads = zm_s.grad
+
+  # n1m, _, n2m, n3m = zm_s.shape
+
+  # #calcul de la perturbation
+  # rm = torch.zeros_like(xm)
+  # rm_s =  torch.masked_select(rm,masque) 
+  rm = torch.zeros_like(xm)
+  print(grads.shape)
+  
+  for i in range(n1):
+      for j in range(n2):
+          for k in range(n3):
+            if lm[i,j,k] == l[i,j,k] : # on ne traite que les pixels correctement classifiés
+                rm[i,j,k]  = rm[i,j,k] + grads[i,l_prime[i,j,k],j,k] - grads[i,l[i,j,k],j,k]
+
+  rm = (gamma/torch.norm(rm))*rm
   r = r + rm
   xm = xm + rm
-  xm.requires_grad_()
   m = m+1
   print(m)
 

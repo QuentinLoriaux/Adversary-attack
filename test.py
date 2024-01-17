@@ -38,112 +38,15 @@ with torch.no_grad():
   x = (W.transforms())(x).cuda()
   z = net(x)["out"] # prédiction des cartes de score de confiance
   classes = [0,8,12,15,    16,3,2,4,5]
-  l = z[:,classes,:,:] # we keep only background, person, cat and dog class + wrong classes
-
-   #exemple : z[:,0,:,:] donne le score du background sur chaque pixel 
+  z = z[:,classes,:,:] # we keep only background, person, cat and dog class + wrong classes
+   #exemple : z[:,0,:,:] donne le score du background sur chaque pixel
+  _,l = z.max(1) 
+  del z
 
 
 # ============ Bagarre ============
-#Je tente le DAG (Dense Adversary Generation), voir [p.3] Xie_Adversarial_Examples_for_ICCV_2017_paper.pdf
 
-
-
-#untargeted correspondrait à une descente de gradient où on fait baisser le bon score jusqu'à ce que ce soit faux?
-#ou alors c'est avec une permutation aléatoire
-
-#définir la liste des mauvaises prédictions (par permutation parmi les mauvaises par ex, ou choix arbitraire)
-
-
-#untargeted, on pourrait définir un l_prime particulier pour le targeted : un texte sur fond ..., un rond...
-def permutation_sans_point_fixe(lst):
-    while True:
-        perm = np.random.permutation(lst)
-        if all(x != y for x, y in zip(lst, perm)):
-            return perm
-
-perm = permutation_sans_point_fixe(range(len(classes)))
-l_prime = z[:, perm, :, :]
-
-gamma = 0.5
-maxIter = 200
-
-# x : base image
-# l : original label
-# l_prime : adversarial label
-# gamma : paramètre d'intensité de la perturbation
-
-
-xm = x
-xm.requires_grad_().float()
-
-r = torch.zeros_like(x)
-m = 0
-
-print("debut boucle")
-
-
-while m < maxIter: 
-
-  with torch.no_grad():
-    zm = net(xm)
-    lm = zm["out"][:,classes,:,:]
-
-    condition = torch.eq(lm, l)
-    if condition.sum() == 0: # tous les pixels sont erronés
-        break
-  
-  #Finding pixels to purturb
-  adv_log=torch.mul(zm,l_prime)
-
-  #Getting the values of the original output
-  clean_log=torch.mul(zm,l)
-
-  adv_dir = adv_log - clean_log
-  rm = torch.mul(adv_dir,condition) # ne modifier que les pixels bons
-  rm.requires_grad_()
-
-  rm_sum = rm.sum()
-  rm_sum.requires_grad_()
-
-  rm_grad = torch.autograd.grad(rm_sum,xm, retain_graph=True)#calcul du gradient
-
-  rm_grad_calc = rm_grad[0]
-  print(rm_grad_calc)
-
-
-  rm = (gamma/rm_grad_calc.norm())*rm_grad_calc
-  r = r + rm
-  xm = xm + rm
-  xm.requires_grad_()
-  m = m+1
-  print(m)
-
-# r: perturbation finale
-# on a entrainé notre attaque, si on prend une image X, X+r correspond à l'image ayant subi l'attaque
-# ça pose un pitit problème de dimensions si X a pas les bonnes dims... à mon avis
-
-# l'intérêt dans la suite sera de tester net(X+r) avec plusieurs réseaux (celui qui a servi d'entrainement mais aussi d'autres)
-# et de faire des tableaux comparatifs de résultats
-
-# Pour ce qui est d'apprendre sur plusieurs réseaux, j'imagine qu'on continue la boucle jusqu'à ce que toutes les classes soient
-# fausses selon les critères de chaque réseau
-# lm[...] == l[...] or l2m[...] == l2[...] or ...
-
-
-
-
-
-
-# une attaque "targeted" correspondrait peut-être à faire apparaître complètement une autre forme + autre classe dans l'image
-# par exemple? 
-
-
-
-
-x = x + r
-
-# a priori, y a moyen que des groupes se séparent et que des formes changent... ça fait plus de classes
-# à afficher!
+#todo
 
 # ============ Affichage ============
 
