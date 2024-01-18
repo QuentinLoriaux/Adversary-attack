@@ -38,7 +38,7 @@ with torch.no_grad():
   x = (W.transforms())(x).cuda()
   z = net(x)["out"] # prédiction des cartes de score de confiance
   classes = [0,8,12,15,    16,3,2,4,5]
-  _,l = z[:,classes,:,:].max(1) # we keep only background, person, cat and dog class + wrong classes
+  l = z[:,classes,:,:] # we keep only background, person, cat and dog class + wrong classes
 
    #exemple : z[:,0,:,:] donne le score du background sur chaque pixel 
 
@@ -46,25 +46,14 @@ with torch.no_grad():
 # ============ Bagarre ============
 #Je tente le DAG (Dense Adversary Generation), voir [p.3] Xie_Adversarial_Examples_for_ICCV_2017_paper.pdf
 
+
+
 #untargeted correspondrait à une descente de gradient où on fait baisser le bon score jusqu'à ce que ce soit faux?
-#ou alors c'est avec une permutation aléatoire?
-
-#fonction de perte
-class adversarialLoss(torch.nn.Module):
-    def __init__(self):
-        super(adversarialLoss, self).__init__()
-
-    def forward(self, z, condition, l, l_prime):
-        loss = 0
-        n1, _, n2, n3 = z.shape
-        for i in range(n1):
-          for j in range(n2):
-            for k in range(n3):
-              if condition[i,j,k]:
-                loss = loss + z[i,l[i,j,k],j,k] - z[i,l_prime[i,j,k],j,k]
-        return loss
+#ou alors c'est avec une permutation aléatoire
 
 #définir la liste des mauvaises prédictions (par permutation parmi les mauvaises par ex, ou choix arbitraire)
+
+
 #untargeted, on pourrait définir un l_prime particulier pour le targeted : un texte sur fond ..., un rond...
 def permutation_sans_point_fixe(lst):
     while True:
@@ -73,60 +62,59 @@ def permutation_sans_point_fixe(lst):
             return perm
 
 perm = permutation_sans_point_fixe(range(len(classes)))
-value_mapping = {value: index for index, value in enumerate(perm)}
-mapping_tensor = torch.tensor([value_mapping[val] for val in range(l.max() + 1)], dtype=l.dtype)
-l_prime = mapping_tensor[l.cpu()]
-# print(l[:5,:5,:5]) # sur cpu?
-# print(l_prime[:5,:5,:5]) # sur cuda
-
-# x : base image
-# l : original label, ie : max score class on base image
-# l_prime : adversarial label ie : other score class on base image
-# gamma : paramètre d'intensité de la perturbation
-
-
+l_prime = z[:, perm, :, :]
 
 gamma = 0.5
 maxIter = 200
 
+# x : base image
+# l : original label
+# l_prime : adversarial label
+# gamma : paramètre d'intensité de la perturbation
+
 
 xm = x
-n1, _, n2, n3 = x.shape
+xm.requires_grad_().float()
+
 r = torch.zeros_like(x)
 m = 0
 
 print("debut boucle")
-net.cpu()
+
 
 while m < maxIter: 
 
-  xm.requires_grad_()
-  zm = net(xm.cpu())["out"][:,classes,:,:].cpu()
-  zm.requires_grad_()
-  _,lm = zm.max(1)
+  with torch.no_grad():
+    zm = net(xm)
+    lm = zm["out"][:,classes,:,:]
 
-  condition = torch.eq(lm.cuda(), l.cuda())
-  if condition.sum() == 0: # tous les pixels sont erronés
-      break
-  print("a")
-  loss = adversarialLoss()
-  print("b")
-  loss = loss(zm, condition, l, l_prime)
-  print("c")
-  loss.backward()
-  print("d")
-  grad = xm.grad()
-  print("e")
-  rm = torch.zeros_like(x)
-  for i in range(n1):
-    for j in range(n2):
-      for k in range(n3):
-        if condition[i,j,k]:
-          rm[i,:,j,k] = -grad[i,:,j,k]
+    condition = torch.eq(lm, l)
+    if condition.sum() == 0: # tous les pixels sont erronés
+        break
+  
+  #Finding pixels to purturb
+  adv_log=torch.mul(zm,l_prime)
 
-  rm = (gamma/rm.norm())*rm
+  #Getting the values of the original output
+  clean_log=torch.mul(zm,l)
+
+  adv_dir = adv_log - clean_log
+  rm = torch.mul(adv_dir,condition) # ne modifier que les pixels bons
+  rm.requires_grad_()
+
+  rm_sum = rm.sum()
+  rm_sum.requires_grad_()
+
+  rm_grad = torch.autograd.grad(rm_sum,xm, retain_graph=True)#calcul du gradient
+
+  rm_grad_calc = rm_grad[0]
+  print(rm_grad_calc)
+
+
+  rm = (gamma/rm_grad_calc.norm())*rm_grad_calc
   r = r + rm
   xm = xm + rm
+  xm.requires_grad_()
   m = m+1
   print(m)
 
