@@ -34,12 +34,12 @@ net = torchvision.models.segmentation.deeplabv3_resnet50(weights=W)
 net = net.cuda()
 
 with torch.no_grad():
-  x = torch.stack([im1,im2,im3,im4,im5,im6,im7,im8,im9],dim=0)
+  x = torch.stack([im1,im2],dim=0)
   x = (W.transforms())(x).cuda()
   z = net(x)["out"] # prédiction des cartes de score de confiance
   classes = [0,8,12,15,    16,3,2,4,5]
   _,l = z[:,classes,:,:].max(1) # we keep only background, person, cat and dog class + wrong classes
-
+  l.requires_grad_(False)
    #exemple : z[:,0,:,:] donne le score du background sur chaque pixel 
 
 
@@ -75,7 +75,7 @@ def permutation_sans_point_fixe(lst):
 perm = permutation_sans_point_fixe(range(len(classes)))
 value_mapping = {value: index for index, value in enumerate(perm)}
 mapping_tensor = torch.tensor([value_mapping[val] for val in range(l.max() + 1)], dtype=l.dtype)
-l_prime = mapping_tensor[l.cpu()]
+l_prime = mapping_tensor[l.cpu()].requires_grad_(False)
 # print(l[:5,:5,:5]) # sur cpu?
 # print(l_prime[:5,:5,:5]) # sur cuda
 
@@ -105,17 +105,19 @@ while m < maxIter:
   zm.requires_grad_()
   _,lm = zm.max(1)
 
-  condition = torch.eq(lm.cuda(), l.cuda())
+  condition = torch.eq(lm.cuda(), l.cuda()).requires_grad_(False)
   if condition.sum() == 0: # tous les pixels sont erronés
       break
   print("a")
   loss = adversarialLoss()
   print("b")
+  condition
   loss = loss(zm, condition, l, l_prime)
   print("c")
-  loss.backward()
+  #loss.backward(retain_graph=False)
   print("d")
-  grad = xm.grad()
+  # grad = xm.grad()
+  grad = torch.autograd.grad(loss, xm, retain_graph=False)[0]
   print("e")
   rm = torch.zeros_like(x)
   for i in range(n1):
@@ -167,13 +169,14 @@ class_to_color = {0: [120, 120, 0], 1: [255, 0, 0], 2: [0, 255, 0], 3: [0, 0, 25
 # 2 : chat
 # 3 : 
 
-rgb_tensor = torch.zeros(9,3,520,520).cuda()
+rgb_tensor = torch.zeros(x.shape).cuda()
 for class_label, color in class_to_color.items():
     mask = (z == class_label).unsqueeze(1).float()
     rgb_tensor += mask * torch.tensor(color).view(1, 3, 1, 1).float().cuda()
 
+#mettre le bon nombre d'images
 visu = torch.cat([im1,im2,im3,im4,im5,im6,im7,im8,im9],dim=-1)
-visubis = torch.cat([rgb_tensor[i] for i in range(9)],dim=-1).cpu()
+visubis = torch.cat([rgb_tensor[i] for i in range(x.size(0))],dim=-1).cpu()
 visu = torch.cat([visu,visubis],dim=1)
 visu = visu.cpu().numpy().transpose(1,2,0)
 

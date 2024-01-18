@@ -36,10 +36,10 @@ W = torchvision.models.segmentation.DeepLabV3_ResNet50_Weights.COCO_WITH_VOC_LAB
 net = torchvision.models.segmentation.deeplabv3_resnet50(weights=W).cuda()
 
 # Charger les images sur le GPU
-im1, im2, im3, im4, im5, im6, im7, im8, im9 = [im.cuda() for im in [im1, im2, im3, im4, im5, im6, im7, im8, im9]]
+im1, im2, im3, im4, im5, im6 = [im.cuda() for im in [im1, im2, im3, im4, im5, im6]]
 
 # Transformer les images
-x = torch.stack([im1, im2, im3, im4, im5, im6, im7, im8, im9], dim=0).cuda()
+x = torch.stack([im1, im2, im3, im4, im5, im6], dim=0).cuda()
 x = (W.transforms())(x)
 
 # Obtenir les prédictions du modèle
