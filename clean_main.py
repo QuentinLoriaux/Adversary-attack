@@ -3,6 +3,10 @@ import torch, torchvision
 import numpy as np
 
 #NOTE : il faudra faire ça avec une 50aine d'img selon les consignes
+#NOTE : Ici, on enlèvera les commentaires, on fera du code + propre et avec des fonctions
+#       de manière à ce qu'on puisse facilement faire des tests
+#       Faut implémenter d'autres réseaux aussi
+#NOTE : Il faut faire de quoi sauvegarder les résultats sous forme d'image, et stocker les perturbations créées!
 
 #images sous forme de tenseurs flottants avec pixels normalisés sur [0,1]
 im1 = torchvision.io.read_image("./coco/217730183_8f58409e7c_z.jpg").float()/255
@@ -55,14 +59,15 @@ class adversarialLoss(torch.nn.Module):
         super(adversarialLoss, self).__init__()
 
     def forward(self, z, condition, l, l_prime):
-        loss = 0
-        n1, _, n2, n3 = z.shape
-        for i in range(n1):
-          for j in range(n2):
-            for k in range(n3):
-              if condition[i,j,k]:
-                loss = loss + z[i,l[i,j,k],j,k] - z[i,l_prime[i,j,k],j,k]
+        # Sélectionner les indices où condition est True
+        indices = torch.where(condition)
+        z_good = z[indices[0], l[indices], indices[1], indices[2]]
+        z_bad = z[indices[0], l_prime[indices], indices[1], indices[2]]
+
+        loss = torch.sum(z_good - z_bad)
+
         return loss
+
 
 #définir la liste des mauvaises prédictions (par permutation parmi les mauvaises par ex, ou choix arbitraire)
 #untargeted, on pourrait définir un l_prime particulier pour le targeted : un texte sur fond ..., un rond...
@@ -86,8 +91,8 @@ l_prime = mapping_tensor[l.cpu()].requires_grad_(False)
 
 
 
-gamma = 0.5
-maxIter = 200
+gamma = 0.8
+maxIter = 10
 
 
 xm = x
@@ -106,30 +111,36 @@ while m < maxIter:
   _,lm = zm.max(1)
 
   condition = torch.eq(lm.cuda(), l.cuda()).requires_grad_(False)
+  somme = condition.sum()
+  print("pixels correctement classés :")
+  print(somme.item())
   if condition.sum() == 0: # tous les pixels sont erronés
       break
-  print("a")
+  # print("a")
   loss = adversarialLoss()
-  print("b")
-  condition
-  loss = loss(zm, condition, l, l_prime)
-  print("c")
-  #loss.backward(retain_graph=False)
-  print("d")
-  # grad = xm.grad()
-  grad = torch.autograd.grad(loss, xm, retain_graph=False)[0]
-  print("e")
+  # print("b")
+  loss = loss(zm, condition.cpu(), l.cpu(), l_prime.cpu())
+  # print("c")
+  loss.backward(retain_graph=False)
+  # print("d")
+  grad = xm.grad
+  # print("e")
   rm = torch.zeros_like(x)
-  for i in range(n1):
-    for j in range(n2):
-      for k in range(n3):
-        if condition[i,j,k]:
-          rm[i,:,j,k] = -grad[i,:,j,k]
+
+  indices = torch.where(condition)
+  rm[indices[0],:,indices[1],indices[2]] = -grad[indices[0],:,indices[1],indices[2]]
 
   rm = (gamma/rm.norm())*rm
   r = r + rm
   xm = xm + rm
+  xm=xm.detach()
+  xm.grad = None
+  
+  del zm
+  net.zero_grad()
+  
   m = m+1
+  print("tour :")
   print(m)
 
 # r: perturbation finale
@@ -155,6 +166,7 @@ while m < maxIter:
 
 
 x = x + r
+_,z = net(x.cpu())["out"][:,classes,:,:].max(1)
 
 # a priori, y a moyen que des groupes se séparent et que des formes changent... ça fait plus de classes
 # à afficher!
@@ -169,13 +181,13 @@ class_to_color = {0: [120, 120, 0], 1: [255, 0, 0], 2: [0, 255, 0], 3: [0, 0, 25
 # 2 : chat
 # 3 : 
 
-rgb_tensor = torch.zeros(x.shape).cuda()
+rgb_tensor = torch.zeros(x.shape)
 for class_label, color in class_to_color.items():
     mask = (z == class_label).unsqueeze(1).float()
-    rgb_tensor += mask * torch.tensor(color).view(1, 3, 1, 1).float().cuda()
+    rgb_tensor += mask * torch.tensor(color).view(1, 3, 1, 1).float()
 
 #mettre le bon nombre d'images
-visu = torch.cat([im1,im2,im3,im4,im5,im6,im7,im8,im9],dim=-1)
+visu = torch.cat([im1,im2],dim=-1)
 visubis = torch.cat([rgb_tensor[i] for i in range(x.size(0))],dim=-1).cpu()
 visu = torch.cat([visu,visubis],dim=1)
 visu = visu.cpu().numpy().transpose(1,2,0)
