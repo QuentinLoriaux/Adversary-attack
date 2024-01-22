@@ -58,9 +58,28 @@ W = torchvision.models.segmentation.DeepLabV3_ResNet50_Weights.COCO_WITH_VOC_LAB
 #On crée une instance du modèle DeepLabV3 qu'on va plus tard utiliser 
 net = torchvision.models.segmentation.deeplabv3_resnet50(weights=W)
 net = net.cuda()
-# ['__background__', 'aeroplane', 'bicycle', 'bird', 'boat', 'bottle', 'bus', 'car',
-# 'cat', 'chair', 'cow', 'diningtable', 'dog', 'horse', 'motorbike', 'person',
-# 'pottedplant', 'sheep', 'sofa', 'train', 'tvmonitor']
+# Classes d'objets avec leurs indices :
+# '__background__' 0
+# 'aeroplane' 1
+# 'bicycle' 2
+# 'bird' 3
+# 'boat' 4
+# 'bottle' 5
+# 'bus' 6
+# 'car' 7
+# 'cat' 8
+# 'chair' 9
+# 'cow' 10
+# 'diningtable' 11
+# 'dog' 12
+# 'horse' 13
+# 'motorbike' 14
+# 'person' 15
+# 'pottedplant' 16
+# 'sheep' 17
+# 'sofa' 18
+# 'train' 19
+# 'tvmonitor' 20
 
 #no_grad pour pas calculer des calculs de gradient dans le code (économie de mémoire)
 with torch.no_grad():
