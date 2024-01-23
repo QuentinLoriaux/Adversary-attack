@@ -209,7 +209,7 @@ arguments = sys.argv[1:]
 
 if len(arguments)==0:
     print("use: python3 clean_main.py [targeted] [load] [n° of save file]")
-    print("Please indicate \"targeted\" for a targeted attack or anything else otherwise.")
+    print("Veuillez indiquer \"targeted\" pour une attaque targeted, ou n'importe quoi pour une untargeted.")
     sys.exit()
 
 targeted = arguments[0] == "targeted"
@@ -218,7 +218,7 @@ load = False
 try:
     load = arguments[1] == "load"
 except IndexError as e:
-    print("the DAG algorithm will be run")
+    print("L'algorithme DAG va être lancé sans chargement de fichier de sauvegarde.")
 
 
 
