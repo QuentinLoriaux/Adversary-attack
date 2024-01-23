@@ -38,12 +38,12 @@ with torch.no_grad():
   x = (W.transforms())(x).cuda()
   z = net(x)["out"] # prédiction des cartes de score de confiance
   classes = [0,8,12,15,    16,3,2,4,5]
-  _,l = z[:,classes,:,:].max(1) # we keep only background, person, cat and dog class + wrong classes
+  _,l = z[:,classes,:,:].max(1) # on ne garde que les classes fond, personne, chat et chien et les fausses
   l.requires_grad_(False)
    #exemple : z[:,0,:,:] donne le score du background sur chaque pixel 
 
 
-# ============ Bagarre ============
+# ============ Attaque ============
 #Je tente le DAG (Dense Adversary Generation), voir [p.3] Xie_Adversarial_Examples_for_ICCV_2017_paper.pdf
 
 #untargeted correspondrait à une descente de gradient où on fait baisser le bon score jusqu'à ce que ce soit faux?
