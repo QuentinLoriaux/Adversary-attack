@@ -213,7 +213,7 @@ def display(x, r, classes, lB):
 arguments = sys.argv[1:]
 
 if len(arguments)==0:
-    print("use: python3 clean_main.py [targeted] [load] [n° of save file]")
+    print("use: python3 main_VGGNet.py [targeted] [load] [n° of save file]")
     print("Veuillez indiquer \"targeted\" pour une attaque targeted, ou n'importe quoi pour une untargeted.")
     sys.exit()
 
@@ -247,7 +247,7 @@ choix_img = [1,2]
 imgs = preprocess_images(image_file_paths)
 
 classes = [0,8,12,15]
-net, x, l = ResnetPrediction(choix_img, classes)
+net, x, l = VGGNetPrediction(choix_img, classes)
 
 if load :
     nb = int(input("Veuillez saisir le numéro du fichier à charger : "))
