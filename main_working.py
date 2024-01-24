@@ -101,43 +101,43 @@ net.cpu()
 
 while m < maxIter: 
 
-  xm.requires_grad_()
-  zm = net(xm.cpu())["out"][:,classes,:,:].cpu()
-  zm.requires_grad_()
-  _,lm = zm.max(1)
+    xm.requires_grad_()
+    zm = net(xm.cpu())["out"][:,classes,:,:].cpu()
+    zm.requires_grad_()
+    _,lm = zm.max(1)
 
-  condition = torch.eq(lm.cuda(), l.cuda()).requires_grad_(False)
-  somme = condition.sum()
-  print("pixels correctement classés :")
-  print(somme.item())
-  if condition.sum() == 0: # tous les pixels sont erronés
-      break
-  # print("a")
-  loss = adversarialLoss()
-  # print("b")
-  loss = loss(zm, condition.cpu(), l.cpu(), l_prime.cpu())
-  # print("c")
-  loss.backward(retain_graph=False)
-  # print("d")
-  grad = xm.grad
-  # print("e")
-  rm = torch.zeros_like(x)
+    condition = torch.eq(lm.cuda(), l.cuda()).requires_grad_(False)
+    somme = condition.sum()
+    print("pixels correctement classés :")
+    print(somme.item())
+    if condition.sum() == 0: # tous les pixels sont erronés
+        break
+    # print("a")
+    loss = adversarialLoss()
+    # print("b")
+    loss = loss(zm, condition.cpu(), l.cpu(), l_prime.cpu())
+    # print("c")
+    loss.backward(retain_graph=False)
+    # print("d")
+    grad = xm.grad
+    # print("e")
+    rm = torch.zeros_like(x)
 
-  indices = torch.where(condition)
-  rm[indices[0],:,indices[1],indices[2]] = -grad[indices[0],:,indices[1],indices[2]]
+    indices = torch.where(condition)
+    rm[indices[0],:,indices[1],indices[2]] = -grad[indices[0],:,indices[1],indices[2]]
 
-  rm = (gamma/rm.norm())*rm
-  r = r + rm
-  xm = xm + rm
-  xm=xm.detach()
-  xm.grad = None
-  
-  del zm
-  net.zero_grad()
-  
-  m = m+1
-  print("tour :")
-  print(m)
+    rm = (gamma/rm.norm())*rm
+    r = r + rm
+    xm = xm + rm
+    xm=xm.detach()
+    xm.grad = None
+    
+    del zm
+    net.zero_grad()
+    
+    m = m+1
+    print("tour :")
+    print(m)
 
 # r: perturbation finale
 # on a entrainé notre attaque, si on prend une image X, X+r correspond à l'image ayant subi l'attaque

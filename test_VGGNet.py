@@ -1,3 +1,5 @@
+# Version plus chatgpt
+
 import torch, torchvision
 import torch.nn as nn
 import torch.optim as optim
@@ -36,15 +38,16 @@ model.eval()
 
 
 with torch.no_grad():
-  x = torch.stack([im1,im2],dim=0)
-  x = (W.transforms())(x).cuda()
-  z = net(x)["out"] # prédiction des cartes de score de confiance
-  classes = [0,8,12,15,    16,3,2,4,5]
-  _,l = z[:,classes,:,:].max(1) # on ne garde que les classes fond, personne, chat et chien et les fausses
-  l.requires_grad_(False)
-   #exemple : z[:,0,:,:] donne le score du background sur chaque pixel 
+    x = torch.stack([im1,im2],dim=0)
+    x = (W.transforms())(x).cuda()
+    z = net(x)["out"] # prédiction des cartes de score de confiance
+    classes = [0,8,12,15,    16,3,2,4,5]
+    _,l = z[:,classes,:,:].max(1) # on ne garde que les classes fond, personne, chat et chien et les fausses
+    l.requires_grad_(False)
+    # exemple : z[:,0,:,:] donne le score du background sur chaque pixel 
 
-
+# J'utilise la fonction de perte de segmentation de la librairie pytorch pour s'assurer 
+# d'avoir des fonctions qui marchent
 criterion = nn.CrossEntropyLoss()  # Fonction de perte
 optimizer = optim.SGD(model.parameters(), lr=0.01)  # Optimiseur (SGD avec un taux d'apprentissage de 0.01)
 

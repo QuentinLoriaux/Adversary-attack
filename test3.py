@@ -1,8 +1,11 @@
+# Version finale
+
 import matplotlib.pyplot as plt
 import torch, torchvision
 import numpy as np
 import sys
 import os
+from torchvision.models import vgg16
 
 
 #NOTE : il faudra faire ça avec une 50aine d'img selon les consignes
@@ -20,18 +23,20 @@ import os
 
 # ============ Prédiction correcte ============
 
-def ResnetPrediction(choix_img, classes):
-
-    W = torchvision.models.segmentation.DeepLabV3_ResNet50_Weights.COCO_WITH_VOC_LABELS_V1
-    net = torchvision.models.segmentation.deeplabv3_resnet50(weights=W)
+def VGGNetPrediction(choix_img, classes):
+    # Charger le modèle VGGNet
+    net = torchvision.models.vgg16(pretrained=True)
     net = net.cuda()
 
-    
     with torch.no_grad():
-        x = torch.stack([imgs[i] for i in choix_img],dim=0)
-        x = (W.transforms())(x).cuda() # ajuste notamment à 520 la taille
-        _,l = net(x)["out"][:,classes,:,:].max(1) # prédiction des cartes de score de confiance
-    return net, x, l
+        x = torch.stack([imgs[i] for i in choix_img], dim=0)
+        x = torch.nn.functional.interpolate(x, size=(520, 520), mode='bilinear', align_corners=False)
+        x = x.cuda()
+
+        # Pour VGGNet, on peut utiliser directement le modèle sans transformation supplémentaire (W)
+        _, l = net(x)[:, classes, :, :].max(1)  # prédiction des cartes de score de confiance
+
+        return net, x, l
 
 # ============ Attaque avec DAG (Dense Adversary Generation) ============
 

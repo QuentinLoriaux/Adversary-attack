@@ -107,8 +107,8 @@ class_to_color = {0: [120, 120, 0], 1: [255, 0, 0], 2: [0, 255, 0], 3: [0, 0, 25
 
 rgb_tensor = torch.zeros(9,3,520,520).cuda()
 for class_label, color in class_to_color.items():
-    mask = (z == class_label).unsqueeze(1).float()
-    rgb_tensor += mask * torch.tensor(color).view(1, 3, 1, 1).float().cuda()
+  mask = (z == class_label).unsqueeze(1).float()
+  rgb_tensor += mask * torch.tensor(color).view(1, 3, 1, 1).float().cuda()
 
 visu = torch.cat([im1,im2,im3,im4,im5,im6,im7,im8,im9],dim=-1)
 visubis = torch.cat([rgb_tensor[i] for i in range(9)],dim=-1).cpu()

@@ -1,37 +1,81 @@
-import matplotlib.pyplot as plt
+# version plus Quentin
+
 import torch, torchvision
+import torch.nn as nn
+import torch.optim as optim
+from torchvision.models import vgg16
+from torchvision import transforms
+import matplotlib.pyplot as plt
 import numpy as np
-import sys
-import os
 
 
-#NOTE : il faudra faire ça avec une 50aine d'img selon les consignes
-#NOTE : Ici, on enlèvera les commentaires, on fera du code + propre et avec des fonctions
-#       de manière à ce qu'on puisse facilement faire des tests
-#       Faut implémenter d'autres réseaux aussi
-#NOTE : Il faut faire de quoi sauvegarder les résultats sous forme d'image, et stocker les perturbations créées!
+#images sous forme de tenseurs flottants avec pixels normalisés sur [0,1]
+im1 = torchvision.io.read_image("./coco/217730183_8f58409e7c_z.jpg").float()/255
+im2 = torchvision.io.read_image("./coco/541870527_8fe599ec04_z.jpg").float()/255
+im3 = torchvision.io.read_image("./coco/2124681469_7ee4868747_z.jpg",mode=torchvision.io.ImageReadMode.RGB).float()/255
+im4 = torchvision.io.read_image("./coco/2711568708_89f2308b85_z.jpg").float()/255
+im5 = torchvision.io.read_image("./coco/2928196999_acd5471d23_z.jpg").float()/255
+im6 = torchvision.io.read_image("./coco/3016145160_497da1b387_z.jpg").float()/255
+im7 = torchvision.io.read_image("./coco/4683642953_2eeda0820e_z.jpg").float()/255
+im8 = torchvision.io.read_image("./coco/6911037487_cc68a9d5a4_z.jpg").float()/255
+im9 = torchvision.io.read_image("./coco/8139728801_60c233660e_z.jpg").float()/255
 
-#NOTE : ça marche po très bien, ptet retirer le background du traitement.
+#resize en carrés de 520x520px
+im1 = torch.nn.functional.interpolate(im1.unsqueeze(0), size=520)[0]
+im2 = torch.nn.functional.interpolate(im2.unsqueeze(0), size=520)[0]
+im3 = torch.nn.functional.interpolate(im3.unsqueeze(0), size=520)[0]
+im4 = torch.nn.functional.interpolate(im4.unsqueeze(0), size=520)[0]
+im5 = torch.nn.functional.interpolate(im5.unsqueeze(0), size=520)[0]
+im6 = torch.nn.functional.interpolate(im6.unsqueeze(0), size=520)[0]
+im7 = torch.nn.functional.interpolate(im7.unsqueeze(0), size=520)[0]
+im8 = torch.nn.functional.interpolate(im8.unsqueeze(0), size=520)[0]
+im9 = torch.nn.functional.interpolate(im9.unsqueeze(0), size=520)[0]
 
 
+# Charger le modèle cible (VGGNet)
+def VGGNetPrediction(classes, choix_img):
+    model = vgg16(pretrained=True)
+    model.eval()
 
-
-
-
-# ============ Prédiction correcte ============
-
-def ResnetPrediction(choix_img, classes):
-
-    W = torchvision.models.segmentation.DeepLabV3_ResNet50_Weights.COCO_WITH_VOC_LABELS_V1
-    net = torchvision.models.segmentation.deeplabv3_resnet50(weights=W)
-    net = net.cuda()
-
-    
     with torch.no_grad():
         x = torch.stack([imgs[i] for i in choix_img],dim=0)
         x = (W.transforms())(x).cuda() # ajuste notamment à 520 la taille
         _,l = net(x)["out"][:,classes,:,:].max(1) # prédiction des cartes de score de confiance
     return net, x, l
+
+
+# ------------ traitement des arguments ------------
+
+image_file_paths = [
+    "./coco/217730183_8f58409e7c_z.jpg",
+    "./coco/541870527_8fe599ec04_z.jpg",
+    "./coco/2124681469_7ee4868747_z.jpg",
+    "./coco/2711568708_89f2308b85_z.jpg",
+    "./coco/2928196999_acd5471d23_z.jpg",
+    "./coco/3016145160_497da1b387_z.jpg",
+    "./coco/4683642953_2eeda0820e_z.jpg",
+    "./coco/6911037487_cc68a9d5a4_z.jpg",
+    "./coco/8139728801_60c233660e_z.jpg",
+]
+
+# ============ Affichage ============
+
+#charge les images sous forme de liste de tenseurs
+def preprocess_images(file_paths, size=520):
+    images = []
+    for file_path in file_paths:
+        image = torchvision.io.read_image(file_path,mode=torchvision.io.ImageReadMode.RGB).float() / 255
+        image = torch.nn.functional.interpolate(image.unsqueeze(0), size=size)[0]
+        images.append(image)
+    return images
+
+#nombre d'images traitées
+choix_img = [1,2]
+
+imgs = preprocess_images(image_file_paths)
+
+classes = [0,8,12,15]
+net, x, l = ResnetPrediction(choix_img, classes)
 
 # ============ Attaque avec DAG (Dense Adversary Generation) ============
 
@@ -140,60 +184,6 @@ def attack(net, x, targeted = False, l=[], classes=[], gamma = 0.5, maxIter = 3)
         net.zero_grad()
 
     return r
-
-
-
-# a priori, y a moyen que des groupes se séparent et que des formes changent...
-# ça fait plus de classes à afficher!
-
-# ============ Affichage ============
-
-#charge les images sous forme de liste de tenseurs
-def preprocess_images(file_paths, size=520):
-    images = []
-    for file_path in file_paths:
-        image = torchvision.io.read_image(file_path,mode=torchvision.io.ImageReadMode.RGB).float() / 255
-        image = torch.nn.functional.interpolate(image.unsqueeze(0), size=size)[0]
-        images.append(image)
-    return images
-
-def display(x, r, classes, lB):
-    xr = x.cuda()+r.cuda()
-    xr.cuda()
-    _,lM = net(xr)["out"][:,classes,:,:].max(1)
-
-    # visualisation des prédictions : il faut transformer les indices de classes en couleur
-    class_to_color = {0: [0, 0, 0], 1: [255, 0, 0], 2: [0, 255, 0], 3: [0, 0, 255], 4: [0, 0, 255], 5: [0, 0, 255], 6: [0, 0, 255], 7: [0, 0, 255], 8: [0, 0, 255], 9: [0, 0, 255]}
-    # Dans l'ordre de découpage du tenseur ligne 40
-    # 0 : background
-    # 1 : humain
-    # 2 : chat
-    # 3 : 
-
-    rgb_tensorM = torch.zeros(x.shape)
-    rgb_tensorB = torch.zeros(x.shape)
-    for class_label, color in class_to_color.items():
-        mask = (lM.cpu() == class_label).unsqueeze(1).float()
-        rgb_tensorM += mask * torch.tensor(color).view(1, 3, 1, 1).float()
-        mask = (lB.cpu() == class_label).unsqueeze(1).float()
-        rgb_tensorB += mask * torch.tensor(color).view(1, 3, 1, 1).float()
-    #mettre le bon nombre d'images
-    imgBase = torch.cat([x[i] for i in range(x.size(0))],dim=-1).cuda()
-    imgBSegmentation = torch.cat([rgb_tensorB[i] for i in range(x.size(0))],dim=-1).cuda()
-    imgModified = torch.cat([xr[i] for i in range(x.size(0))],dim=-1).cuda()
-    imgPerturbation = torch.cat([r[i] for i in range(x.size(0))],dim=-1).cuda()
-    imgMSegmentation = torch.cat([rgb_tensorM[i] for i in range(x.size(0))],dim=-1).cuda()
-    
-    img = torch.cat([imgBase,imgBSegmentation, imgModified, imgPerturbation, imgMSegmentation],dim=1)
-    img = img.cpu().numpy().transpose(1,2,0)
-
-    dpi = plt.rcParams['figure.dpi']
-    width_px = 1600
-    height_px = 900
-    plt.figure(figsize=(width_px/dpi, height_px/dpi))
-    plt.imshow(img)
-    plt.axis('off')
-    plt.show()
 
 
 
