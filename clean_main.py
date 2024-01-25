@@ -24,12 +24,12 @@ def ResnetPrediction(choix_img, classes):
 
     W = torchvision.models.segmentation.DeepLabV3_ResNet50_Weights.COCO_WITH_VOC_LABELS_V1
     net = torchvision.models.segmentation.deeplabv3_resnet50(weights=W)
-    net = net.cuda()
+    net.cpu()
 
     
     with torch.no_grad():
         x = torch.stack([imgs[i] for i in choix_img],dim=0)
-        x = (W.transforms())(x).cuda() # ajuste notamment à 520 la taille
+        x = (W.transforms())(x).cpu() # ajuste notamment à 520 la taille
         _,l = net(x)["out"][:,classes,:,:].max(1) # prédiction des cartes de score de confiance
     return net, x, l
 
@@ -158,8 +158,8 @@ def preprocess_images(file_paths, size=520):
     return images
 
 def display(x, r, classes, lB):
-    xr = x.cuda()+r.cuda()
-    xr.cuda()
+    xr = x+r
+    xr
     _,lM = net(xr)["out"][:,classes,:,:].max(1)
 
     # visualisation des prédictions : il faut transformer les indices de classes en couleur
@@ -178,11 +178,11 @@ def display(x, r, classes, lB):
         mask = (lB.cpu() == class_label).unsqueeze(1).float()
         rgb_tensorB += mask * torch.tensor(color).view(1, 3, 1, 1).float()
     #mettre le bon nombre d'images
-    imgBase = torch.cat([x[i] for i in range(x.size(0))],dim=-1).cuda()
-    imgBSegmentation = torch.cat([rgb_tensorB[i] for i in range(x.size(0))],dim=-1).cuda()
-    imgModified = torch.cat([xr[i] for i in range(x.size(0))],dim=-1).cuda()
-    imgPerturbation = torch.cat([r[i] for i in range(x.size(0))],dim=-1).cuda()
-    imgMSegmentation = torch.cat([rgb_tensorM[i] for i in range(x.size(0))],dim=-1).cuda()
+    imgBase = torch.cat([x[i] for i in range(x.size(0))],dim=-1)
+    imgBSegmentation = torch.cat([rgb_tensorB[i] for i in range(x.size(0))],dim=-1)
+    imgModified = torch.cat([xr[i] for i in range(x.size(0))],dim=-1)
+    imgPerturbation = torch.cat([r[i] for i in range(x.size(0))],dim=-1)
+    imgMSegmentation = torch.cat([rgb_tensorM[i] for i in range(x.size(0))],dim=-1)
     
     img = torch.cat([imgBase,imgBSegmentation, imgModified, imgPerturbation, imgMSegmentation],dim=1)
     img = img.cpu().numpy().transpose(1,2,0)
@@ -205,20 +205,14 @@ def display(x, r, classes, lB):
 
 # ------------ traitement des arguments ------------
 
-arguments = sys.argv[1:]
 
-if len(arguments)==0:
-    print("use: python3 clean_main.py [targeted] [load] [n° of save file]")
-    print("Veuillez indiquer \"targeted\" pour une attaque targeted, ou n'importe quoi pour une untargeted.")
-    sys.exit()
+ask = input("Voulez-vous load une perturbation déjà existante? (y/n) :")
+load = ask == "y"
 
-targeted = arguments[0] == "targeted"
+if not load :
+    ask = input("Voulez-vous faire une attaque targeted (t) ou untargeted? (u) : ")
+    targeted = ask =="t"
 
-load = False
-try:
-    load = arguments[1] == "load"
-except IndexError as e:
-    print("L'algorithme DAG va être lancé sans chargement de fichier de sauvegarde.")
 
 
 
@@ -247,13 +241,13 @@ net, x, l = ResnetPrediction(choix_img, classes)
 if load :
     nb = int(input("Veuillez saisir le numéro du fichier à charger : "))
     try:
-        r = torch.load('./saves/perturb' + str(nb)+'.pth')
+        r = torch.load('./saves/perturb' + str(nb)+'.pth', map_location=torch.device('cpu'))
     except FileNotFoundError as e:
         print("Le fichier n'existe pas.")
         sys.exit()
 else :
     ask = int(input("Nombre maximum d'itérations : "))
-    r = attack(net, x, targeted, l, classes, maxIter=ask)
+    r = attack(net.cuda(), x.cuda(), targeted, l, classes, maxIter=ask)
     ask = input("Voulez-vous sauvegarder l'attaque? (y/n) : ")
     if ask == 'y':
         nb = 0
@@ -261,4 +255,4 @@ else :
             nb += 1
         torch.save(r,"./saves/perturb"+str(nb)+".pth")
 
-display(x,r, classes, l)
+display(x.cpu(),r.cpu(), classes, l)
