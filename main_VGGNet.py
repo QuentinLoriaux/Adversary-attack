@@ -6,6 +6,7 @@ import numpy as np
 import sys
 import os
 from torchvision.models import vgg16
+import torch.nn.functional as F
 
 
 #NOTE : il faudra faire ça avec une 50aine d'img selon les consignes
@@ -26,15 +27,16 @@ from torchvision.models import vgg16
 def VGGNetPrediction(choix_img, classes):
     # Charger le modèle VGGNet
     net = torchvision.models.vgg16(pretrained=True)
-    net = net.cuda()
+    net = net.cpu()
 
     with torch.no_grad():
         x = torch.stack([imgs[i] for i in choix_img], dim=0)
         x = torch.nn.functional.interpolate(x, size=(520, 520), mode='bilinear', align_corners=False)
-        x = x.cuda()
+        x = x.cpu()
 
         # Pour VGGNet, on peut utiliser directement le modèle sans transformation supplémentaire (W)
-        _, l = net(x)[:, classes, :, :].max(1)  # prédiction des cartes de score de confiance
+        scores = net(x)
+        _, l = scores.max(1) # prédiction des cartes de score de confiance
 
         return net, x, l
 
@@ -109,11 +111,20 @@ def attack(net, x, targeted = False, l=[], classes=[], gamma = 0.5, maxIter = 3)
         m += 1
         print("tour : " + str(m))
         
-        zm = net(xm.cpu())["out"][:,classes,:,:].cpu().requires_grad_()
-        
+        output = net(xm.cpu())
+        print("Output Shape:", output.shape)
+        print("Output Shape:", output.shape)
+        output = net(xm.cpu())
+        print("Output Shape:", output.shape)
+
+        classes_tensor = torch.tensor(classes, dtype=torch.long)
+
+        # Use a single index for class selection
+        zm = output[:, classes_tensor].cpu().requires_grad_()
+
         with torch.no_grad():
             _,lm = zm.max(1)
-            condition = torch.eq(lm.cuda(), l.cuda())
+            condition = torch.eq(lm.cpu(), l.cpu())
             somme = condition.sum()
             print("pixels correctement classés : " + str(somme.item()))
             
@@ -122,10 +133,10 @@ def attack(net, x, targeted = False, l=[], classes=[], gamma = 0.5, maxIter = 3)
                 
         if targeted:
             loss = targetedLoss()
-            loss = loss(zm.cuda(), condition.cuda(), l.cuda(), l_target.cuda())
+            loss = loss(zm.cpu(), condition.cpu(), l.cpu(), l_target.cpu())
         else:
             loss = untargetedLoss()
-            loss = loss(zm.cuda(), condition.cuda(), l.cuda())
+            loss = loss(zm.cpu(), condition.cpu(), l.cpu())
 
         loss.backward(retain_graph=False)
 
@@ -163,9 +174,15 @@ def preprocess_images(file_paths, size=520):
     return images
 
 def display(x, r, classes, lB):
-    xr = x.cuda()+r.cuda()
-    xr.cuda()
-    _,lM = net(xr)["out"][:,classes,:,:].max(1)
+    xr = x+r
+    output = net(xr.cpu())
+    print("Output Shape:", output.shape)
+
+    classes_tensor = torch.tensor(classes, dtype=torch.long)
+
+    # Use a single index for class selection
+    _, lM = output[:, classes_tensor].max(1)
+
 
     # visualisation des prédictions : il faut transformer les indices de classes en couleur
     class_to_color = {0: [0, 0, 0], 1: [255, 0, 0], 2: [0, 255, 0], 3: [0, 0, 255], 4: [0, 0, 255], 5: [0, 0, 255], 6: [0, 0, 255], 7: [0, 0, 255], 8: [0, 0, 255], 9: [0, 0, 255]}
@@ -178,16 +195,41 @@ def display(x, r, classes, lB):
     rgb_tensorM = torch.zeros(x.shape)
     rgb_tensorB = torch.zeros(x.shape)
     for class_label, color in class_to_color.items():
+
+
+
+
+#==================================================================================================
+#============================  A MODIFIER  ========================================================
+#==================================================================================================
+
+
+
+
         mask = (lM.cpu() == class_label).unsqueeze(1).float()
-        rgb_tensorM += mask * torch.tensor(color).view(1, 3, 1, 1).float()
+        # Assuming mask is a binary mask with the same dimensions as rgb_tensorM
+        # and color is a list or tuple representing the RGB color
+        color_tensor = torch.tensor(color).view(1, 3, 1, 1).float()
+
+        # Create a dummy tensor with spatial dimensions
+        dummy_tensor = torch.zeros(1, 1, rgb_tensorM.size(2), rgb_tensorM.size(3), dtype=torch.float)
+
+
+        # Ensure that mask has the same dimensions as rgb_tensorM
+        mask = F.interpolate(mask, size=(rgb_tensorM.size(2), rgb_tensorM.size(3)), mode='nearest')
+
+        # Perform element-wise addition
+        rgb_tensorM += mask * color_tensor
+
         mask = (lB.cpu() == class_label).unsqueeze(1).float()
-        rgb_tensorB += mask * torch.tensor(color).view(1, 3, 1, 1).float()
+        mask = F.interpolate(mask, size=(rgb_tensorB.size(2), rgb_tensorB.size(3)), mode='nearest')
+        rgb_tensorB += mask * color_tensor
     #mettre le bon nombre d'images
-    imgBase = torch.cat([x[i] for i in range(x.size(0))],dim=-1).cuda()
-    imgBSegmentation = torch.cat([rgb_tensorB[i] for i in range(x.size(0))],dim=-1).cuda()
-    imgModified = torch.cat([xr[i] for i in range(x.size(0))],dim=-1).cuda()
-    imgPerturbation = torch.cat([r[i] for i in range(x.size(0))],dim=-1).cuda()
-    imgMSegmentation = torch.cat([rgb_tensorM[i] for i in range(x.size(0))],dim=-1).cuda()
+    imgBase = torch.cat([x[i] for i in range(x.size(0))],dim=-1)
+    imgBSegmentation = torch.cat([rgb_tensorB[i] for i in range(x.size(0))],dim=-1)
+    imgModified = torch.cat([xr[i] for i in range(x.size(0))],dim=-1)
+    imgPerturbation = torch.cat([r[i] for i in range(x.size(0))],dim=-1)
+    imgMSegmentation = torch.cat([rgb_tensorM[i] for i in range(x.size(0))],dim=-1)
     
     img = torch.cat([imgBase,imgBSegmentation, imgModified, imgPerturbation, imgMSegmentation],dim=1)
     img = img.cpu().numpy().transpose(1,2,0)
@@ -210,20 +252,12 @@ def display(x, r, classes, lB):
 
 # ------------ traitement des arguments ------------
 
-arguments = sys.argv[1:]
+ask = input("Voulez-vous load une perturbation déjà existante? (y/n) :")
+load = ask == "y"
 
-if len(arguments)==0:
-    print("use: python3 main_VGGNet.py [targeted] [load] [n° of save file]")
-    print("Veuillez indiquer \"targeted\" pour une attaque targeted, ou n'importe quoi pour une untargeted.")
-    sys.exit()
-
-targeted = arguments[0] == "targeted"
-
-load = False
-try:
-    load = arguments[1] == "load"
-except IndexError as e:
-    print("L'algorithme DAG va être lancé sans chargement de fichier de sauvegarde.")
+if not load :
+    ask = input("Voulez-vous faire une attaque targeted (t) ou untargeted? (u) : ")
+    targeted = ask =="t"
 
 
 
@@ -252,13 +286,13 @@ net, x, l = VGGNetPrediction(choix_img, classes)
 if load :
     nb = int(input("Veuillez saisir le numéro du fichier à charger : "))
     try:
-        r = torch.load('./saves/perturb' + str(nb)+'.pth')
+        r = torch.load('./saves/perturb' + str(nb)+'.pth', map_location=torch.device('cpu'))
     except FileNotFoundError as e:
         print("Le fichier n'existe pas.")
         sys.exit()
 else :
     ask = int(input("Nombre maximum d'itérations : "))
-    r = attack(net, x, targeted, l, classes, maxIter=ask)
+    r = attack(net.cpu(), x.cpu(), targeted, l, classes, maxIter=ask)
     ask = input("Voulez-vous sauvegarder l'attaque? (y/n) : ")
     if ask == 'y':
         nb = 0
@@ -266,4 +300,4 @@ else :
             nb += 1
         torch.save(r,"./saves/perturb"+str(nb)+".pth")
 
-display(x,r, classes, l)
+display(x.cpu(),r.cpu(), classes, l)
