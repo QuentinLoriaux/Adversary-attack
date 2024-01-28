@@ -211,10 +211,6 @@ def display(x, r, classes, lB):
         # and color is a list or tuple representing the RGB color
         color_tensor = torch.tensor(color).view(1, 3, 1, 1).float()
 
-        # Create a dummy tensor with spatial dimensions
-        dummy_tensor = torch.zeros(1, 1, rgb_tensorM.size(2), rgb_tensorM.size(3), dtype=torch.float)
-
-
         # Ensure that mask has the same dimensions as rgb_tensorM
         mask = F.interpolate(mask, size=(rgb_tensorM.size(2), rgb_tensorM.size(3)), mode='nearest')
 

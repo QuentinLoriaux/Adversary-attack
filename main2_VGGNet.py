@@ -1,37 +1,30 @@
 import matplotlib.pyplot as plt
-import torch, torchvision
+import torch
+import torchvision
 import numpy as np
 import sys
 import os
-
-
-#NOTE : il faudra faire ça avec une 50aine d'img selon les consignes
-#NOTE : Ici, on enlèvera les commentaires, on fera du code + propre et avec des fonctions
-#       de manière à ce qu'on puisse facilement faire des tests
-#       Faut implémenter d'autres réseaux aussi
-#NOTE : Il faut faire de quoi sauvegarder les résultats sous forme d'image, et stocker les perturbations créées!
-
-#NOTE : ça marche po très bien, ptet retirer le background du traitement.
-
-
-
-
-
+import torch.nn.functional as F
+from torchvision.models.vgg import vgg16, VGG16_Weights
+from keras.applications.vgg16 import VGG16
 
 # ============ Prédiction correcte ============
 
-def ResnetPrediction(choix_img, classes):
-
-    W = torchvision.models.segmentation.DeepLabV3_ResNet50_Weights.COCO_WITH_VOC_LABELS_V1
-    net = torchvision.models.segmentation.deeplabv3_resnet50(weights=W)
-    net.cpu()
-
-    
+def VGGNetPrediction(choix_img, classes):
+    # Charger le modèle VGGNet
+    net = vgg16(weights=VGG16_Weights.IMAGENET1K_V1, classes=self.classes)
+    net = net.cpu()
     with torch.no_grad():
-        x = torch.stack([imgs[i] for i in choix_img],dim=0)
-        x = (W.transforms())(x).cpu() # ajuste notamment à 520 la taille
-        _,l = net(x)["out"][:,classes,:,:].max(1) # prédiction des cartes de score de confiance
-    return net, x, l
+        x = torch.stack([imgs[i] for i in choix_img], dim=0)
+        x = torch.nn.functional.interpolate(x, size=(520, 520), mode='bilinear', align_corners=False)
+        x = x.cpu()
+
+        # Pour VGGNet, on peut utiliser directement le modèle sans transformation supplémentaire (W)
+        scores = net(x)
+        print("score = ", scores)
+        _, l = scores.max(1) # prédiction des cartes de score de confiance
+
+        return net, x, l
 
 # ============ Attaque avec DAG (Dense Adversary Generation) ============
 
@@ -104,11 +97,18 @@ def attack(net, x, targeted = False, l=[], classes=[], gamma = 0.5, maxIter = 3)
         m += 1
         print("tour : " + str(m))
         
-        zm = net(xm.cpu())["out"][:,classes,:,:].cpu().requires_grad_()
-        
+        output = net(xm.cpu())
+        print("Output = ", output)
+        print("Output Shape:", output.shape)
+
+        classes_tensor = torch.tensor(classes, dtype=torch.long)
+
+        # Use a single index for class selection
+        zm = output[:, classes_tensor].cpu().requires_grad_()
+
         with torch.no_grad():
             _,lm = zm.max(1)
-            condition = torch.eq(lm.cuda(), l.cuda())
+            condition = torch.eq(lm.cpu(), l.cpu())
             somme = condition.sum()
             print("pixels correctement classés : " + str(somme.item()))
             
@@ -117,10 +117,10 @@ def attack(net, x, targeted = False, l=[], classes=[], gamma = 0.5, maxIter = 3)
                 
         if targeted:
             loss = targetedLoss()
-            loss = loss(zm.cuda(), condition.cuda(), l.cuda(), l_target.cuda())
+            loss = loss(zm.cpu(), condition.cpu(), l.cpu(), l_target.cpu())
         else:
             loss = untargetedLoss()
-            loss = loss(zm.cuda(), condition.cuda(), l.cuda())
+            loss = loss(zm.cpu(), condition.cpu(), l.cpu())
 
         loss.backward(retain_graph=False)
 
@@ -141,11 +141,6 @@ def attack(net, x, targeted = False, l=[], classes=[], gamma = 0.5, maxIter = 3)
 
     return r
 
-
-
-# a priori, y a moyen que des groupes se séparent et que des formes changent...
-# ça fait plus de classes à afficher!
-
 # ============ Affichage ============
 
 #charge les images sous forme de liste de tenseurs
@@ -158,73 +153,54 @@ def preprocess_images(file_paths, size=520):
     return images
 
 def display(x, r, classes, lB):
-    xr = x+r
-    xr
-    _,lM = net(xr)["out"][:,classes,:,:].max(1)
+    xr = x + r
+    output = net(xr.cpu())
+    print("Output Shape:", output.shape)
+
+    classes_tensor = torch.tensor(classes, dtype=torch.long)
+
+    # Use a single index for class selection
+    _, lM = output[:, classes_tensor].max(1)
 
     # visualisation des prédictions : il faut transformer les indices de classes en couleur
-    class_to_color = {0: [0, 0, 0], 1: [255, 0, 0], 2: [0, 255, 0], 3: [0, 0, 255], 4: [0, 0, 255], 5: [0, 0, 255], 6: [0, 0, 255], 7: [0, 0, 255], 8: [0, 0, 255], 9: [0, 0, 255]}
-    # Dans l'ordre de découpage du tenseur ligne 40
-    # 0 : background
-    # 1 : humain
-    # 2 : chat
-    # 3 : 
+    class_to_color = {0: [0, 0, 0], 1: [255, 0, 0], 2: [0, 255, 0], 3: [0, 0, 255], 4: [0, 0, 255], 5: [0, 0, 255],
+                      6: [0, 0, 255], 7: [0, 0, 255], 8: [0, 0, 255], 9: [0, 0, 255]}
+    rgb_tensorM = torch.zeros((x.size(0), 3, x.size(2), x.size(3)))
+    rgb_tensorB = torch.zeros_like(rgb_tensorM)
 
-    rgb_tensorM = torch.zeros(x.shape)
-    rgb_tensorB = torch.zeros(x.shape)
+
     for class_label, color in class_to_color.items():
-        mask = (lM.cpu() == class_label).unsqueeze(1).float()
-        rgb_tensorM += mask * torch.tensor(color).view(1, 3, 1, 1).float()
-        mask = (lB.cpu() == class_label).unsqueeze(1).float()
-        rgb_tensorB += mask * torch.tensor(color).view(1, 3, 1, 1).float()
+        maskM = (lM.cpu() == class_label).unsqueeze(1).float()
+        color_tensor = torch.tensor(color).view(1, 3, 1, 1).float()
 
-    #mettre le bon nombre d'images
-    imgBase = torch.cat([x[i] for i in range(x.size(0))],dim=-1)
-    imgBSegmentation = torch.cat([rgb_tensorB[i] for i in range(x.size(0))],dim=-1)
-    imgModified = torch.cat([xr[i] for i in range(x.size(0))],dim=-1)
-    imgPerturbation = torch.cat([r[i] for i in range(x.size(0))],dim=-1)
-    imgMSegmentation = torch.cat([rgb_tensorM[i] for i in range(x.size(0))],dim=-1)
-    
-    img = torch.cat([imgBase,imgBSegmentation, imgModified, imgPerturbation, imgMSegmentation],dim=1)
-    img = img.cpu().numpy().transpose(1,2,0)
+        # Preserve spatial dimensions during interpolation using scale_factor
+        scale_factor = (x.size(2) / maskM.size(2), x.size(3) / maskM.size(3))
+        maskM = F.interpolate(maskM, scale_factor=scale_factor, mode='nearest')
+        rgb_tensorM += maskM * color_tensor
+
+        maskB = (lB.cpu() == class_label).unsqueeze(1).float()
+        maskB = F.interpolate(maskB, scale_factor=scale_factor, mode='nearest')
+        rgb_tensorB += maskB * color_tensor
+        
+    imgBase = torch.cat([x[i] for i in range(x.size(0))], dim=-1)
+    imgBSegmentation = torch.cat([rgb_tensorB[i] for i in range(x.size(0))], dim=-1)
+    imgModified = torch.cat([xr[i] for i in range(x.size(0))], dim=-1)
+    imgPerturbation = torch.cat([r[i] for i in range(x.size(0))], dim=-1)
+    imgMSegmentation = torch.cat([rgb_tensorM[i] for i in range(x.size(0))], dim=-1)
+
+    img = torch.cat([imgBase, imgBSegmentation, imgModified, imgPerturbation, imgMSegmentation], dim=1)
+    img = img.cpu().numpy().transpose(1, 2, 0)
 
     dpi = plt.rcParams['figure.dpi']
     width_px = 1600
     height_px = 900
-    plt.figure(figsize=(width_px/dpi, height_px/dpi))
+    plt.figure(figsize=(width_px / dpi, height_px / dpi))
     plt.imshow(img)
     plt.axis('off')
     plt.show()
 
-#============= NORME =============
-
-def norme(l, x, r):
-    _,lr = net(x + r)["out"][:,l,:,:].max(1) # utiliser un masque
-    if l == lr:
-        print("f(x) = f(x+delta) pas d'attaque")
-    else:
-        print("f(x)!=f(x+delta) : il y a une attaque")
-
-
-    rn = torch.norm(r)
-    print("norme de r : " + str(rn.item()))
-
-    if rn <= 4/255:
-        print("l'attaque est totalement invisible")
-    elif rn <= 8/255:
-        print("l'attaque est difficilement visible")
-    elif rn <= 25/255:
-        print("l'attaque est invisible en théorie mais visible en pratique")
-    else :
-        print("l'attaque est visible")
-
-
-
 # ============ MAIN ============
-
-
 # ------------ traitement des arguments ------------
-
 
 ask = input("Voulez-vous load une perturbation déjà existante? (y/n) :")
 load = ask == "y"
@@ -232,7 +208,6 @@ load = ask == "y"
 if not load :
     ask = input("Voulez-vous faire une attaque targeted (t) ou untargeted? (u) : ")
     targeted = ask =="t"
-
 
 
 
@@ -255,8 +230,9 @@ choix_img = [1,2]
 
 imgs = preprocess_images(image_file_paths)
 
-classes = [0,8,12,15]
-net, x, l = ResnetPrediction(choix_img, classes)
+# Load the VGGNet model and preprocess the images
+classes = [0, 8, 12, 15]
+net, x, l = VGGNetPrediction(choix_img, classes)
 
 if load :
     nb = int(input("Veuillez saisir le numéro du fichier à charger : "))
@@ -267,7 +243,7 @@ if load :
         sys.exit()
 else :
     ask = int(input("Nombre maximum d'itérations : "))
-    r = attack(net.cuda(), x.cuda(), targeted, l, classes, maxIter=ask)
+    r = attack(net.cpu(), x.cpu(), targeted, l, classes, maxIter=ask)
     ask = input("Voulez-vous sauvegarder l'attaque? (y/n) : ")
     if ask == 'y':
         nb = 0
@@ -275,6 +251,5 @@ else :
             nb += 1
         torch.save(r,"./saves/perturb"+str(nb)+".pth")
 
-display(x.cpu(),r.cpu(), classes, l)
-
-norme(l, x, r)
+# Display the results
+display(x.cpu(), r.cpu(), classes, l)
