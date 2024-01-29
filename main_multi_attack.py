@@ -56,13 +56,16 @@ class targetedLoss(torch.nn.Module):
     def __init__(self):
         super(targetedLoss, self).__init__()
 
-    def forward(self, z, condition, l, l_target):
+    def forward(self, z, z2, condition, l, l_target):
         # Sélectionner les indices où condition est True
         indices = torch.where(condition)
         z_good = z[indices[0], l[indices], indices[1], indices[2]]
         z_bad = z[indices[0], l_target[indices], indices[1], indices[2]]
+        
+        z2_good = z2[indices[0], l[indices], indices[1], indices[2]]
+        z2_bad = z2[indices[0], l_target[indices], indices[1], indices[2]]
 
-        loss = torch.sum(z_good - z_bad)
+        loss = torch.sum(z_good + z2_good - z_bad - z2_bad)
 
         return loss
 
@@ -70,11 +73,13 @@ class untargetedLoss(torch.nn.Module):
     def __init__(self):
         super(untargetedLoss, self).__init__()
 
-    def forward(self, z, condition, l):
+    def forward(self, z, z2, condition, l):
         # Sélectionner les indices où condition est True
         indices = torch.where(condition)
         z_good = z[indices[0], l[indices], indices[1], indices[2]]
-        loss = torch.sum(z_good)
+        z2_good = z2[indices[0], l[indices], indices[1], indices[2]]
+
+        loss = torch.sum(z_good + z2_good)
         return loss
 
 
@@ -101,7 +106,7 @@ def targetList(l, classes, random = True):
         return
 
 
-def attack(net, x, targeted = False, l=[], classes=[], gamma = 0.5, maxIter = 3):
+def attack(net, net2, x, targeted = False, l=[], classes=[], gamma = 0.5, maxIter = 3):
     xm = x.detach().requires_grad_()
     with torch.no_grad():
         if targeted :
@@ -114,63 +119,50 @@ def attack(net, x, targeted = False, l=[], classes=[], gamma = 0.5, maxIter = 3)
 
     net.cpu()
     net.zero_grad()
+    net2.cpu()
+    net2.zero_grad()
     print("debut boucle")
 
     while m < maxIter: 
         m += 1
         print("tour : " + str(m))
         
-        zm = net(xm.cpu())["out"][:,classes,:,:].cpu().requires_grad_()
+        zm1 = net(xm.cpu())["out"][:,classes,:,:].cpu().requires_grad_()
+        zm2 = net2(xm.cpu())["out"][:,classes,:,:].cpu().requires_grad_()
         with torch.no_grad():
 
-            #Production de données pour rassembler en tableau
-            tmp = round(r.max().item()*255,1)
-            print("norme infinie perturbation : " + str(tmp)+"/255, ", end='')
-            if tmp <= 4:
-                print("l'attaque est totalement invisible")
-            elif tmp <= 8:
-                print("l'attaque est difficilement visible")
-            elif tmp <= 25:
-                print("l'attaque est invisible en théorie mais visible en pratique")
-            else :
-                print("l'attaque est visible")
-
-            tab_norme.append(tmp)
-
-            score_good = torch.gather(zm,1,l.unsqueeze(1))
+            #On donne les scores et les pixels classés selon le 1er réseau, choix arbitraire
+            score_good = torch.gather(zm1,1,l.unsqueeze(1))
             score_good = torch.sum(score_good)/torch.numel(score_good)
             if m==1:
                 score_ref = score_good.item()
-            tmp = round(score_good.item()*100/score_ref,1)
-            print("pourcentage de bons scores : " + str(tmp)+"%")
-            tab_pourcentage_bon_score.append(tmp)
-
+            print("pourcentage de bons scores : " + str(round(score_good.item()*100/score_ref,1))+"%")
             if targeted :
-                score_bad = torch.gather(zm,1,l_target.unsqueeze(1))
+                score_bad = torch.gather(zm1,1,l_target.unsqueeze(1))
                 score_bad = torch.sum(score_bad)/torch.numel(score_bad)
-                tmp = round(score_bad.item()*100/score_good.item(),1)
-                print("rapport des scores targets sur bons scores : " + str(tmp)+"%")
-                tab_rapport_target_sur_bon_score.append(tmp)
+                print("rapport des scores targets sur bons scores : " + str(round(score_bad.item()*100/score_good.item(),1))+"%")
             
-            _,lm = zm.max(1)
+            _,lm = zm1.max(1)
             condition = torch.eq(lm.cuda(), l.cuda())
             somme = condition.sum()
-            tmp = somme.item()
-            print("pixels correctement classés : " + str(tmp))
-            tab_pixels_correctement_classes.append(tmp)
-            
-            
-
+            print("pixels correctement classés : " + str(somme.item()))
             
             if condition.sum() == 0: # tous les pixels sont mal classés : fin de l'algorithme
                 break
+            
+            _,lm = zm2.max(1)
+            cond2 = torch.eq(lm.cuda(), l.cuda())
+            condition = torch.logical_or(condition, cond2) # on traite les pixels bien classés par net ou net2
+            
+
+
                 
         if targeted:
             loss = targetedLoss()
-            loss = loss(zm.cuda(), condition.cuda(), l.cuda(), l_target.cuda())
+            loss = loss(zm1.cuda(), zm2.cuda(), condition.cuda(), l.cuda(), l_target.cuda())
         else:
             loss = untargetedLoss()
-            loss = loss(zm.cuda(), condition.cuda(), l.cuda())
+            loss = loss(zm1.cuda(), zm2.cuda(), condition.cuda(), l.cuda())
 
         loss.backward(retain_graph=False)
 
@@ -189,8 +181,10 @@ def attack(net, x, targeted = False, l=[], classes=[], gamma = 0.5, maxIter = 3)
         
         
 
-        del zm
+        del zm1
         net.zero_grad()
+        del zm2
+        net2.zero_grad()
 
     return r
 
@@ -263,34 +257,38 @@ imgs = preprocess_images(image_file_paths)
 choix_img = [0,3]
 classes = [0,8,12,15]
 
-tab_norme = []
-tab_pourcentage_bon_score = []
-tab_rapport_target_sur_bon_score = []
-tab_pixels_correctement_classes = []
-
 
 ask = input("Voulez-vous load une perturbation déjà existante? (y/n) :")
 load = ask == "y"
 
 if not load :
     ask = input("Voulez-vous faire une attaque targeted (t) ou untargeted? (u) : ")
-    targeted = ask =="t"
+    targeted = ask == "t"
+
+    ask2 = input("Quel 2e modèle utiliser? resnet (R) mobilenet (M), fcn_resnet(F)")
+    if ask2 == "R" :
+        net2, _, _ = ResnetPrediction(choix_img, classes)
+    elif ask2 == "M" :
+        net2, _, _ = MobilenetPrediction(choix_img, classes)
+    elif ask2 == "F" :
+        net2, _, _ = fcnResnetPrediction(choix_img, classes)
+    else :
+        print("on prend resnet par défaut")
+        net2, _, _ = ResnetPrediction(choix_img, classes)    
 
 
 ask = input("Quel modèle utiliser? resnet (R) mobilenet (M), fcn_resnet(F)")
 if ask == "R" :
     net, x, l = ResnetPrediction(choix_img, classes)
-    label = "R"
 elif ask == "M" :
     net, x, l = MobilenetPrediction(choix_img, classes)
-    label = "M"
 elif ask == "F" :
     net, x, l = fcnResnetPrediction(choix_img, classes)
-    label = "F"
 else :
     print("on prend resnet par défaut")
     net, x, l = ResnetPrediction(choix_img, classes)
-    label = "R"
+    ask = "R"
+label = ask
 
 
 
@@ -298,11 +296,12 @@ else :
 #CHARGEMENT
 if load :
     print("chargement du fichier :")
-    ask = input("Veuillez saisir le réseau correspondant au fichier (R/M/F): ")
+    ask = input("Veuillez saisir le 1er réseau correspondant au fichier (R/M/F): ")
+    ask2 = input("Veuillez saisir le 2e réseau correspondant au fichier (R/M/F): ")
     nb = int(input("Veuillez saisir le numéro du fichier à charger : "))
 
     try:
-        r = torch.load('./saves/perturb'+ ask + str(nb)+'.pth', map_location=torch.device('cpu'))
+        r = torch.load('./saves/perturb'+ ask + ask2 + str(nb)+'.pth', map_location=torch.device('cpu'))
     except FileNotFoundError as e:
         print("Le fichier n'existe pas.")
         sys.exit()
@@ -310,15 +309,16 @@ if load :
 #ATTAQUE        
 else :
     ask = int(input("Nombre maximum d'itérations : "))
-    r = attack(net.cuda(), x.cuda(), targeted, l, classes, maxIter=ask)
+    r = attack(net.cuda(), net2.cuda(), x.cuda(), targeted, l, classes, maxIter=ask)
     ask = input("Voulez-vous sauvegarder l'attaque? (y/n) : ")
     if ask == 'y':
         nb = 0
-        while os.path.exists("./saves/perturb"+ label +str(nb)+".pth"):
+        while os.path.exists("./saves/perturb"+ label + ask2 +str(nb)+".pth"):
             nb += 1
-        torch.save(r,"./saves/perturb"+ label +str(nb)+".pth")
+        torch.save(r,"./saves/perturb"+ label + ask2 +str(nb)+".pth")
 
-#Comparaison a posteriori de x et x+r (veiller à retenir quel reseau est utilisé et lequel a été utilisé pour la perturbation)
+
+#Comparaison a posteriori de x et x+r (veiller à retenir quel reseau est utilisé et lesquels ont été utilisés pour la perturbation)
 with torch.no_grad() :
     z = net(x)["out"][:,classes,:,:]
     score_ref = torch.gather(z,1,l.unsqueeze(1))
