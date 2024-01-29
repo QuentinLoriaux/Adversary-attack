@@ -105,12 +105,28 @@ def attack(net, x, targeted = False, l=[], classes=[], gamma = 0.5, maxIter = 3)
         print("tour : " + str(m))
         
         zm = net(xm.cpu())["out"][:,classes,:,:].cpu().requires_grad_()
-        
         with torch.no_grad():
+
+            #Production de données pour rassembler en tableau
+            print("norme infinie perturbation : " + str(round(r.max().item()*255,1))+"/255")
+            
+            score_good = torch.gather(zm,1,l.unsqueeze(1))
+            score_good = torch.sum(score_good)/torch.numel(score_good)
+            if m==1:
+                score_ref = score_good.item()
+            print("pourcentage de bons scores : " + str(round(score_good.item()*100/score_ref,1))+"%")
+            if targeted :
+                score_bad = torch.gather(zm,1,l_target.unsqueeze(1))
+                score_bad = torch.sum(score_bad)/torch.numel(score_bad)
+                print("rapport des scores targets sur bons scores : " + str(round(score_bad.item()*100/score_good.item(),1))+"%")
+            
             _,lm = zm.max(1)
             condition = torch.eq(lm.cuda(), l.cuda())
             somme = condition.sum()
             print("pixels correctement classés : " + str(somme.item()))
+            
+            
+
             
             if condition.sum() == 0: # tous les pixels sont mal classés : fin de l'algorithme
                 break
@@ -130,21 +146,21 @@ def attack(net, x, targeted = False, l=[], classes=[], gamma = 0.5, maxIter = 3)
 
         rm = (gamma/rm.norm())*rm
         r += rm
+        
 
         xm=xm.detach()
         xm += rm
         xm.grad = None
         xm.requires_grad_()
         
+        
+
         del zm
         net.zero_grad()
 
     return r
 
 
-
-# a priori, y a moyen que des groupes se séparent et que des formes changent...
-# ça fait plus de classes à afficher!
 
 # ============ Affichage ============
 
@@ -159,7 +175,6 @@ def preprocess_images(file_paths, size=520):
 
 def display(x, r, classes, lB):
     xr = x+r
-    xr
     _,lM = net(xr)["out"][:,classes,:,:].max(1)
 
     # visualisation des prédictions : il faut transformer les indices de classes en couleur
@@ -198,8 +213,8 @@ def display(x, r, classes, lB):
 
 #============= NORME =============
 
-def norme(l, x, r):
-    _,lr = net(x + r)["out"][:,l,:,:].max(1) # utiliser un masque
+def norme(l, x, r, classes):
+    _,lr = net(x + r)["out"][:,classes,:,:].max(1) # utiliser un masque
     if l == lr:
         print("f(x) = f(x+delta) pas d'attaque")
     else:
@@ -251,13 +266,14 @@ image_file_paths = [
 ]
 
 #nombre d'images traitées
-choix_img = [1,2]
+choix_img = [0,3]
 
 imgs = preprocess_images(image_file_paths)
 
 classes = [0,8,12,15]
 net, x, l = ResnetPrediction(choix_img, classes)
 
+#CHARGEMENT
 if load :
     nb = int(input("Veuillez saisir le numéro du fichier à charger : "))
     try:
@@ -265,6 +281,8 @@ if load :
     except FileNotFoundError as e:
         print("Le fichier n'existe pas.")
         sys.exit()
+
+#ATTAQUE        
 else :
     ask = int(input("Nombre maximum d'itérations : "))
     r = attack(net.cuda(), x.cuda(), targeted, l, classes, maxIter=ask)
@@ -275,6 +293,6 @@ else :
             nb += 1
         torch.save(r,"./saves/perturb"+str(nb)+".pth")
 
-display(x.cpu(),r.cpu(), classes, l)
+#display(x.cpu(),r.cpu(), classes, l)
 
-norme(l, x, r)
+#norme(l, x, r, classes)
