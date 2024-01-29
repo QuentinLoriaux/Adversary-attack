@@ -124,22 +124,40 @@ def attack(net, x, targeted = False, l=[], classes=[], gamma = 0.5, maxIter = 3)
         with torch.no_grad():
 
             #Production de données pour rassembler en tableau
-            print("norme infinie perturbation : " + str(round(r.max().item()*255,1))+"/255")
-            
+            tmp = round(r.max().item()*255,1)
+            print("norme infinie perturbation : " + str(tmp)+"/255, ", end='')
+            if tmp <= 4:
+                print("l'attaque est totalement invisible")
+            elif tmp <= 8:
+                print("l'attaque est difficilement visible")
+            elif tmp <= 25:
+                print("l'attaque est invisible en théorie mais visible en pratique")
+            else :
+                print("l'attaque est visible")
+
+            tab_norme.append(tmp)
+
             score_good = torch.gather(zm,1,l.unsqueeze(1))
             score_good = torch.sum(score_good)/torch.numel(score_good)
             if m==1:
                 score_ref = score_good.item()
-            print("pourcentage de bons scores : " + str(round(score_good.item()*100/score_ref,1))+"%")
+            tmp = round(score_good.item()*100/score_ref,1)
+            print("pourcentage de bons scores : " + str(tmp)+"%")
+            tab_pourcentage_bon_score.append(tmp)
+
             if targeted :
                 score_bad = torch.gather(zm,1,l_target.unsqueeze(1))
                 score_bad = torch.sum(score_bad)/torch.numel(score_bad)
-                print("rapport des scores targets sur bons scores : " + str(round(score_bad.item()*100/score_good.item(),1))+"%")
+                tmp = round(score_bad.item()*100/score_good.item(),1)
+                print("rapport des scores targets sur bons scores : " + str(tmp)+"%")
+                tab_rapport_target_sur_bon_score.append(tmp)
             
             _,lm = zm.max(1)
             condition = torch.eq(lm.cuda(), l.cuda())
             somme = condition.sum()
-            print("pixels correctement classés : " + str(somme.item()))
+            tmp = somme.item()
+            print("pixels correctement classés : " + str(tmp))
+            tab_pixels_correctement_classes.append(tmp)
             
             
 
@@ -244,6 +262,11 @@ image_file_paths = [
 imgs = preprocess_images(image_file_paths)
 choix_img = [0,3]
 classes = [0,8,12,15]
+
+tab_norme = []
+tab_pourcentage_bon_score = []
+tab_rapport_target_sur_bon_score = []
+tab_pixels_correctement_classes = []
 
 
 ask = input("Voulez-vous load une perturbation déjà existante? (y/n) :")

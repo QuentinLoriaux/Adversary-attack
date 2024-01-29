@@ -286,6 +286,6 @@ else :
             nb += 1
         torch.save(r,"./saves/perturb"+ label +str(nb)+".pth")
 
-#display(x.cpu(),r.cpu(), classes, l)
+display(x.cpu(),r.cpu(), classes, l)
 
 #norme(l, x, r, classes)
