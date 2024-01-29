@@ -47,8 +47,8 @@ class targetedLoss(torch.nn.Module):
         z_bad = z[indices[0], l_target[indices], indices[1], indices[2]]
         s = torch.median(z_bad[1]).item()
         score_x.append(s)
-        sr = torch.median(r + z_bad).item()
-        score_xr.append(sr)
+        #sr = torch.median(r + z_bad).item()
+        #score_xr.append(sr)
 
         loss = torch.sum(z_good - z_bad)
 
@@ -64,8 +64,8 @@ class untargetedLoss(torch.nn.Module):
         z_good = z[indices[0], l[indices], indices[1], indices[2]]
         s = torch.median(z_good[1]).item()
         score_x.append(s)
-        sr = torch.median(r + z_good).item()
-        score_xr.append(sr)
+        #sr = torch.median(r + z_good).item()
+        #score_xr.append(sr)
 
         loss = torch.sum(z_good)
         return loss
@@ -210,7 +210,8 @@ def display(x, r, classes, lB):
 
     print("tableau des scores de x : ", score_x)
 
-    return lM
+
+    return lM, x.cpu().numpy(), (x + r).cpu().numpy()
 
 
 #============= NORME =============
@@ -297,6 +298,11 @@ else :
             nb += 1
         torch.save(r,"./saves/perturb"+str(nb)+".pth")
 
-lM = display(x.cpu(),r.cpu(), classes, l)
+lM, x_array, xr_array = display(x.cpu(),r.cpu(), classes, l)
 
 norme(l, lM, x, r)
+
+
+# Print the shape of the arrays
+print("Valeur de x :", np.mean(x_array))
+print("Valeur de x + r :", np.mean(xr_array))
