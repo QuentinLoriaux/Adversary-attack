@@ -4,20 +4,6 @@ import numpy as np
 import sys
 import os
 
-
-#NOTE : il faudra faire ça avec une 50aine d'img selon les consignes
-#NOTE : Ici, on enlèvera les commentaires, on fera du code + propre et avec des fonctions
-#       de manière à ce qu'on puisse facilement faire des tests
-#       Faut implémenter d'autres réseaux aussi
-#NOTE : Il faut faire de quoi sauvegarder les résultats sous forme d'image, et stocker les perturbations créées!
-
-#NOTE : ça marche po très bien, ptet retirer le background du traitement.
-
-
-
-
-
-
 # ============ Prédiction correcte ============
 
 def ResnetPrediction(choix_img, classes):
@@ -100,10 +86,7 @@ def permutation_sans_point_fixe(l, classes):
 def targetList(l, classes, random = True):
     if random:
         return permutation_sans_point_fixe(l.cpu(), classes)
-    else :
-        #Faire quelque chose de personnalisé
 
-        return
 
 
 def attack(net, net2, x, targeted = False, l=[], classes=[], gamma = 0.5, maxIter = 3):
@@ -207,7 +190,6 @@ def display(x, r, classes, lB):
 
     # visualisation des prédictions : il faut transformer les indices de classes en couleur
     class_to_color = {0: [0, 0, 0], 1: [255, 0, 0], 2: [0, 255, 0], 3: [0, 0, 255], 4: [0, 0, 255], 5: [0, 0, 255], 6: [0, 0, 255], 7: [0, 0, 255], 8: [0, 0, 255], 9: [0, 0, 255]}
-    # Dans l'ordre de découpage du tenseur ligne 40
     # 0 : background
     # 1 : humain
     # 2 : chat
@@ -221,7 +203,6 @@ def display(x, r, classes, lB):
         mask = (lB.cpu() == class_label).unsqueeze(1).float()
         rgb_tensorB += mask * torch.tensor(color).view(1, 3, 1, 1).float()
 
-    #mettre le bon nombre d'images
     imgBase = torch.cat([x[i] for i in range(x.size(0))],dim=-1)
     imgBSegmentation = torch.cat([rgb_tensorB[i] for i in range(x.size(0))],dim=-1)
     imgModified = torch.cat([xr[i] for i in range(x.size(0))],dim=-1)
