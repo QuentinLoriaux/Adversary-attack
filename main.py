@@ -228,6 +228,12 @@ def display(x, r, classes, lB):
     plt.axis('off')
     plt.show()
 
+    print("tableau des normes : ", tab_norme)
+    print("tableau des pourcentages de bons scores : ", tab_pourcentage_bon_score)
+    if targeted :
+        print("tableau des rapports des scores targets sur bons scores : ", tab_rapport_target_sur_bon_score)
+    print("tableau des pixels correctement classés : ", tab_pixels_correctement_classes)
+
 
 # ============ MAIN ============
 
