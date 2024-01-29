@@ -33,6 +33,22 @@ def ResnetPrediction(choix_img, classes):
         _,l = net(x)["out"][:,classes,:,:].max(1) # prédiction des cartes de score de confiance
     return net, x, l
 
+def MobilenetPrediction(choix_img, classes):
+    net = torchvision.models.segmentation.deeplabv3_mobilenet_v3_large(pretrained=True)
+    net.cpu()
+    with torch.no_grad():
+        x = torch.stack([imgs[i] for i in choix_img],dim=0)
+        _,l = net(x)["out"][:,classes,:,:].max(1) # prédiction des cartes de score de confiance
+    return net, x, l
+
+def fcnResnetPrediction(choix_img, classes):
+    net = torchvision.models.segmentation.fcn_resnet101(pretrained=True)
+    net.cpu()
+    with torch.no_grad():
+        x = torch.stack([imgs[i] for i in choix_img],dim=0)
+        _,l = net(x)["out"][:,classes,:,:].max(1) # prédiction des cartes de score de confiance
+    return net, x, l
+
 # ============ Attaque avec DAG (Dense Adversary Generation) ============
 
 #fonctions de perte
@@ -211,47 +227,8 @@ def display(x, r, classes, lB):
     plt.axis('off')
     plt.show()
 
-#============= NORME =============
-
-def norme(l, x, r, classes):
-    _,lr = net(x + r)["out"][:,classes,:,:].max(1) # utiliser un masque
-    if l == lr:
-        print("f(x) = f(x+delta) pas d'attaque")
-    else:
-        print("f(x)!=f(x+delta) : il y a une attaque")
-
-
-    rn = torch.norm(r)
-    print("norme de r : " + str(rn.item()))
-
-    if rn <= 4/255:
-        print("l'attaque est totalement invisible")
-    elif rn <= 8/255:
-        print("l'attaque est difficilement visible")
-    elif rn <= 25/255:
-        print("l'attaque est invisible en théorie mais visible en pratique")
-    else :
-        print("l'attaque est visible")
-
-
 
 # ============ MAIN ============
-
-
-# ------------ traitement des arguments ------------
-
-
-ask = input("Voulez-vous load une perturbation déjà existante? (y/n) :")
-load = ask == "y"
-
-if not load :
-    ask = input("Voulez-vous faire une attaque targeted (t) ou untargeted? (u) : ")
-    targeted = ask =="t"
-
-
-
-
-# ------------ traitement des arguments ------------
 
 image_file_paths = [
     "./coco/217730183_8f58409e7c_z.jpg",
@@ -264,20 +241,45 @@ image_file_paths = [
     "./coco/6911037487_cc68a9d5a4_z.jpg",
     "./coco/8139728801_60c233660e_z.jpg",
 ]
-
-#nombre d'images traitées
-choix_img = [0,3]
-
 imgs = preprocess_images(image_file_paths)
-
+choix_img = [0,3]
 classes = [0,8,12,15]
-net, x, l = ResnetPrediction(choix_img, classes)
+
+
+ask = input("Voulez-vous load une perturbation déjà existante? (y/n) :")
+load = ask == "y"
+
+if not load :
+    ask = input("Voulez-vous faire une attaque targeted (t) ou untargeted? (u) : ")
+    targeted = ask =="t"
+
+
+ask = input("Quel modèle utiliser? resnet (R) mobilenet (M), fcn_resnet(F)")
+if ask == "R" :
+    net, x, l = ResnetPrediction(choix_img, classes)
+    label = "R"
+elif ask == "M" :
+    net, x, l = MobilenetPrediction(choix_img, classes)
+    label = "M"
+elif ask == "F" :
+    net, x, l = fcnResnetPrediction(choix_img, classes)
+    label = "F"
+else :
+    print("on prend resnet par défaut")
+    net, x, l = ResnetPrediction(choix_img, classes)
+    label = "R"
+
+
+
 
 #CHARGEMENT
 if load :
+    print("chargement du fichier :")
+    ask = input("Veuillez saisir le réseau correspondant au fichier (R/M/F): ")
     nb = int(input("Veuillez saisir le numéro du fichier à charger : "))
+
     try:
-        r = torch.load('./saves/perturb' + str(nb)+'.pth', map_location=torch.device('cpu'))
+        r = torch.load('./saves/perturb'+ ask + str(nb)+'.pth', map_location=torch.device('cpu'))
     except FileNotFoundError as e:
         print("Le fichier n'existe pas.")
         sys.exit()
@@ -289,10 +291,24 @@ else :
     ask = input("Voulez-vous sauvegarder l'attaque? (y/n) : ")
     if ask == 'y':
         nb = 0
-        while os.path.exists("./saves/perturb"+str(nb)+".pth"):
+        while os.path.exists("./saves/perturb"+ label +str(nb)+".pth"):
             nb += 1
-        torch.save(r,"./saves/perturb"+str(nb)+".pth")
+        torch.save(r,"./saves/perturb"+ label +str(nb)+".pth")
 
-#display(x.cpu(),r.cpu(), classes, l)
+#Comparaison a posteriori de x et x+r (veiller à retenir quel reseau est utilisé et lequel a été utilisé pour la perturbation)
+z = net(x)["out"][:,classes,:,:]
+score_ref = torch.gather(z,1,l.unsqueeze(1))
+score_ref = torch.sum(score_ref)/torch.numel(score_ref)
+score_ref = score_ref.item()
 
-#norme(l, x, r, classes)
+xr = x+r
+zr = net(xr)["out"][:,classes,:,:]
+score_good = torch.gather(zr,1,l.unsqueeze(1))
+score_good = torch.sum(score_good)/torch.numel(score_good)
+score_good = score_good.item()
+print("pourcentage de bons scores : " + str(round(score_good*100/score_ref,1))+"%")
+
+
+#Affichage des images
+display(x.cpu(),r.cpu(), classes, l)
+
