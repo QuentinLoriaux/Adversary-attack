@@ -276,6 +276,8 @@ choix_img = [1,2]
 
 imgs = preprocess_images(image_file_paths)
 
+vgg16.eval()
+
 classes = [0,8,12,15]
 net, x, l = VGGNetPrediction(choix_img, classes)
 
