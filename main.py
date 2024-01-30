@@ -11,7 +11,6 @@ def ResnetPrediction(choix_img, classes):
     W = torchvision.models.segmentation.DeepLabV3_ResNet50_Weights.COCO_WITH_VOC_LABELS_V1
     net = torchvision.models.segmentation.deeplabv3_resnet50(weights=W)
     net.cpu()
-
     
     with torch.no_grad():
         x = torch.stack([imgs[i] for i in choix_img],dim=0)

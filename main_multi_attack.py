@@ -147,7 +147,8 @@ def attack(net, net2, x, targeted = False, l=[], classes=[], gamma = 0.5, maxIte
             somme = condition.sum()
             tmp = somme.item()
             print("pixels correctement classés : " + str(tmp))
-            
+            tab_pixels_correctement_classes.append(tmp)
+
             if condition.sum() == 0: # tous les pixels sont mal classés : fin de l'algorithme
                 break
             
