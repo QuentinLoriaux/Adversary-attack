@@ -83,7 +83,7 @@ def targetList(l, classes, random = True):
 
 
 
-def attack(net, x, targeted = False, l=[], classes=[], gamma = 0.5, maxIter = 3):
+def attack(net, x, epsilon, targeted = False, l=[], classes=[], gamma = 0.5, maxIter = 3):
     xm = x.detach().requires_grad_()
     with torch.no_grad():
         if targeted :
@@ -97,8 +97,8 @@ def attack(net, x, targeted = False, l=[], classes=[], gamma = 0.5, maxIter = 3)
     net.cpu()
     net.zero_grad()
     print("debut boucle")
-
-    while m < maxIter: 
+    ndelta = 0
+    while m < maxIter and ndelta < epsilon : 
         m += 1
         print("tour : " + str(m))
         
@@ -106,18 +106,18 @@ def attack(net, x, targeted = False, l=[], classes=[], gamma = 0.5, maxIter = 3)
         with torch.no_grad():
 
             #Production de données pour rassembler en tableau
-            tmp = round(r.max().item()*255,1)
-            print("norme infinie perturbation : " + str(tmp)+"/255, ", end='')
-            if tmp <= 4:
+            ndelta = round(r.max().item()*255,1)
+            print("norme infinie perturbation : " + str(ndelta)+"/255, ", end='')
+            if ndelta <= 4:
                 print("l'attaque est totalement invisible")
-            elif tmp <= 8:
+            elif ndelta <= 8:
                 print("l'attaque est difficilement visible")
-            elif tmp <= 25:
+            elif ndelta <= 25:
                 print("l'attaque est invisible en théorie mais visible en pratique")
             else :
                 print("l'attaque est visible")
 
-            tab_norme.append(tmp)
+            tab_norme.append(ndelta)
 
             score_good = torch.gather(zm,1,l.unsqueeze(1))
             score_good = torch.sum(score_good)/torch.numel(score_good)
@@ -256,6 +256,7 @@ tab_pourcentage_bon_score = []
 tab_rapport_target_sur_bon_score = []
 tab_pixels_correctement_classes = []
 
+epsilon = 25
 
 ask = input("Voulez-vous load une perturbation déjà existante? (y/n) :")
 load = ask == "y"
@@ -298,10 +299,14 @@ if load :
 #ATTAQUE        
 else :
     ask = int(input("Nombre maximum d'itérations : "))
-    r = attack(net.cuda(), x.cuda(), targeted, l, classes, maxIter=ask)
+    r = attack(net.cuda(), x.cuda(), epsilon, targeted, l, classes, maxIter=ask)
     ask = input("Voulez-vous sauvegarder l'attaque? (y/n) : ")
     if ask == 'y':
         nb = 0
+        try :
+            os.mkdir("./saves")
+        except FileExistsError as e:
+            pass
         while os.path.exists("./saves/perturb"+ label +str(nb)+".pth"):
             nb += 1
         torch.save(r,"./saves/perturb"+ label +str(nb)+".pth")

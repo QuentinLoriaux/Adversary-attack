@@ -322,6 +322,10 @@ else :
     r = attack(net.cuda(), net2.cuda(), x.cuda(), targeted, l, classes, maxIter=ask)
     ask = input("Voulez-vous sauvegarder l'attaque? (y/n) : ")
     if ask == 'y':
+        try :
+            os.mkdir("./saves")
+        except FileExistsError as e:
+            pass
         nb = 0
         while os.path.exists("./saves/perturb"+ label + ask2 +str(nb)+".pth"):
             nb += 1
